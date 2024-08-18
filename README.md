@@ -1,3 +1,6 @@
+# Pico Weather fork
+## This repo remains active to house the branches that may one day be pulled into the parent Pimoroni Enviro repo. I am moving my improvements and change in design direction to always on faster polling to a new repo: https://github.com/sjefferson99/pico-weather
+
 # Enviro MicroPython firmware <!-- omit in toc -->
 
 - [About Enviro](#about-enviro)
