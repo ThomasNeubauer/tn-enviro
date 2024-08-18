@@ -6,6 +6,7 @@ from math import pi
 import enviro
 from enviro.boards import weather
 from phew import logging
+from lib.ulogging import uLogger
 
 class Multicore_Weather:
   def __init__(self) -> None:
@@ -41,6 +42,7 @@ class Multicore_Weather:
 
 class Multicore_Weather_Wind:
   def __init__(self) -> None:
+    self.log = uLogger("Multicore_Weather_Wind")
     self.pending_wind_data_lock = _thread.allocate_lock()
     self.samples_lock = _thread.allocate_lock()
     self.wind_speed_pin = Pin(9, Pin.IN, Pin.PULL_UP)
@@ -175,16 +177,24 @@ class Multicore_Weather_Wind:
     adjusted_samples = self.cached_samples[0 + self.processing_overhead_poll_count : -1]
     return adjusted_samples
   
-  def process_wind_data(self) -> dict[str, float]:
+  def process_wind_data(self): # -> dict[str, float]:
     self.cache_samples()
     samples = self.remove_processing_overhead_data_polls(self.cached_samples)
 
+    gust_wind_error = 0
     gust_wind = self.determine_gust_wind(samples)
+    if gust_wind > 50:
+      self.log.error(f"Wind speed is too high: {gust_wind}, data used to calculate gust wind speed: {samples}")
+      gust_wind_error = gust_wind
+      gust_wind = 0
     logging.info(f"> gust wind speed is: {gust_wind}")
-    average_wind = self.calculate_average_wind(samples)    
+    average_wind = self.calculate_average_wind(samples)
     logging.info(f"> average wind speed is: {average_wind}")
 
-    return {"timestamp": time(), "avg_wind_speed": average_wind, "gust_wind_speed": gust_wind}
+    if gust_wind_error > 0:
+      return {"timestamp": time(), "avg_wind_speed": average_wind, "gust_wind_speed": gust_wind, "gust_wind_error": gust_wind_error, "samples": samples}
+    
+    return {"timestamp": time(), "avg_wind_speed": average_wind, "gust_wind_speed": gust_wind, "gust_wind_error": gust_wind_error}
   
   def get_pending_data(self) -> list:
     """
