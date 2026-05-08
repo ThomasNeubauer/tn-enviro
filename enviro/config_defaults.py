@@ -8,6 +8,7 @@ DEFAULT_UK_BST = True
 DEFAULT_BME688_ADDRESS = None
 DEFAULT_SECONDARY_DESTINATION = None
 DEFAULT_WIND_DIRECTION_OFFSET = 0
+DEFAULT_PIO_WATCHDOG_TIME = 0
 
 def add_missing_config_settings():
   try:
@@ -94,6 +95,12 @@ def add_missing_config_settings():
   except AttributeError:
     warn_missing_config_setting("run_continuously")
     config.run_continuously = False
+
+  try:
+    config.pio_watchdog_time
+  except AttributeError:
+    warn_missing_config_setting("pio_watchdog_time")
+    config.pio_watchdog_time = DEFAULT_PIO_WATCHDOG_TIME
   
 
 def warn_missing_config_setting(setting):

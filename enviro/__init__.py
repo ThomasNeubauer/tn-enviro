@@ -594,12 +594,26 @@ class DELAYOFF:
         self._sm.active(1)
         logging.debug(f'> delayoff set on gpio{pin:} for {delay_ms:} ms')
 
+# Global reference to the watchdog DELAYOFF instance for cleanup
+_watchdog_delayoff = None
+
 def arm_watchdog():
+  global _watchdog_delayoff
+  
   # set default alarm now in case processor hangs.  Normally ths is overwritten by sleep()
 
   if helpers.file_exists("watchdog_live.txt"):
     os.remove("watchdog_live.txt")
     logging.warn("> * * Processor recovered by watchdog * *")
+  
+  # Clean up any existing watchdog state machine
+  if _watchdog_delayoff is not None:
+    try:
+      _watchdog_delayoff._sm.active(0)
+      _watchdog_delayoff._sm.deinit()
+    except:
+      pass
+    _watchdog_delayoff = None
   
   # this code extracted from sleep TODO make into routine shared by both -----------------
   dt = rtc.datetime()
@@ -627,7 +641,7 @@ def arm_watchdog():
   #------------------------------------------------------------------end copied from sleep
 
   # power will be pulled based on wathdog time (set in config file in minutes)
-  delayoff = DELAYOFF(HOLD_VSYS_EN_PIN, int(config.pio_watchdog_time))
+  _watchdog_delayoff = DELAYOFF(HOLD_VSYS_EN_PIN, int(config.pio_watchdog_time))
   with open("watchdog_live.txt", "w") as hangfile:
     hangfile.write("")
 
