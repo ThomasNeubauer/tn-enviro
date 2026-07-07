@@ -143,7 +143,25 @@ rtc.enable_timer_interrupt(False)
 
 t = rtc.datetime()
 # BUG ERRNO 22, EINVAL, when date read from RTC is invalid for the pico's RTC.
-RTC().datetime((t[0], t[1], t[2], t[6], t[3], t[4], t[5], 0)) # synch PR2040 rtc too
+# Validate datetime before setting Pico RTC to avoid EINVAL errors
+try:
+    # PCF85063A returns: (year, month, day, hour, minute, second, weekday)
+    # Pico RTC expects: (year, month, day, weekday, hour, minute, second, subsecond)
+    year, month, day, hour, minute, second, weekday = t[0], t[1], t[2], t[3], t[4], t[5], t[6]
+    
+    # Validate all datetime components are within valid ranges
+    if (year >= 2000 and year <= 2099 and
+        month >= 1 and month <= 12 and
+        day >= 1 and day <= 31 and
+        weekday >= 0 and weekday <= 6 and
+        hour >= 0 and hour <= 23 and
+        minute >= 0 and minute <= 59 and
+        second >= 0 and second <= 59):
+        RTC().datetime((year, month, day, weekday, hour, minute, second, 0)) # synch PR2040 rtc too
+    else:
+        logging.warn(f"> invalid datetime from PCF85063A: {t}, skipping Pico RTC sync")
+except (IndexError, ValueError, TypeError) as e:
+    logging.warn(f"> error reading datetime from PCF85063A: {e}, skipping Pico RTC sync")
 
 # jazz up that console! toot toot!
 print("       ___            ___            ___          ___          ___            ___       ")
@@ -343,6 +361,24 @@ def sync_clock_from_ntp():
   rtc.datetime(timestamp) # set the time on the rtc chip
   i2c.writeto_mem(0x51, 0x00, b'\x00') # ensure rtc is running
   rtc.enable_timer_interrupt(False)
+
+  # Also sync the Pico's internal RTC
+  # timestamp from ntp.fetch() is (year, month, day, hour, minute, second, weekday, subsecond)
+  # Pico RTC expects (year, month, day, weekday, hour, minute, second, subsecond)
+  try:
+      year, month, day, hour, minute, second, weekday, subsecond = timestamp[0:8]
+      if (year >= 2000 and year <= 2099 and
+          month >= 1 and month <= 12 and
+          day >= 1 and day <= 31 and
+          weekday >= 0 and weekday <= 6 and
+          hour >= 0 and hour <= 23 and
+          minute >= 0 and minute <= 59 and
+          second >= 0 and second <= 59):
+          RTC().datetime((year, month, day, weekday, hour, minute, second, subsecond))
+      else:
+          logging.warn(f"> invalid timestamp from NTP: {timestamp}, skipping Pico RTC sync")
+  except (IndexError, ValueError, TypeError) as e:
+      logging.warn(f"> error parsing NTP timestamp: {e}, skipping Pico RTC sync")
 
   # read back the RTC time to confirm it was updated successfully
   dt = rtc.datetime()
@@ -612,6 +648,11 @@ _watchdog_delayoff = None
 def arm_watchdog():
   global _watchdog_delayoff
   
+  # Don't arm watchdog when on USB power or in continuous mode
+  # since we can't actually sleep/shutdown in these cases
+  if vbus_present or config.run_continuously:
+    return
+  
   # set default alarm now in case processor hangs.  Normally ths is overwritten by sleep()
 
   if helpers.file_exists("watchdog_live.txt"):
@@ -681,7 +722,7 @@ def startup():
 
   # log the wake reason
   logging.info("  - wake reason:", wake_reason_name(reason))
-  #set watchdog if configured in config file
+  # set watchdog if configured in config file
   if config.pio_watchdog_time is not 0:
     arm_watchdog()
 
