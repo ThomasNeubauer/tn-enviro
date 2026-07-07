@@ -252,6 +252,14 @@ def reconnect_wifi(ssid, password, country, hostname=None):
   return elapsed_ms
 
 def connect_to_wifi():
+  import network
+  wlan = network.WLAN(network.STA_IF)
+  
+  # If already connected, just return True (for continuous mode)
+  if wlan.isconnected():
+    logging.info("> WiFi already connected")
+    return True
+  
   try:
     logging.info(f"> connecting to wifi network '{config.wifi_ssid}'")
     elapsed_ms = reconnect_wifi(config.wifi_ssid, config.wifi_password, config.wifi_country)
@@ -559,13 +567,17 @@ def upload_readings():
     return False
 
   finally:
-    # Disconnect wifi
+    # Disconnect wifi only if not in continuous mode
+    # In continuous mode, we keep WiFi connected to avoid constant reconnection overhead
     import network
-    logging.info("> Disconnecting wireless after upload")
-    wlan = network.WLAN(network.STA_IF)
-    wlan.active(True)
-    wlan.disconnect()
-    wlan.active(False)
+    if not config.run_continuously:
+      logging.info("> Disconnecting wireless after upload")
+      wlan = network.WLAN(network.STA_IF)
+      wlan.active(True)
+      wlan.disconnect()
+      wlan.active(False)
+    else:
+      logging.info("> Keeping wireless connected (continuous mode)")
 
   return True
 
