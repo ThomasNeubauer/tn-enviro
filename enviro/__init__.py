@@ -648,9 +648,9 @@ _watchdog_delayoff = None
 def arm_watchdog():
   global _watchdog_delayoff
   
-  # Don't arm watchdog when on USB power or in continuous mode
-  # since we can't actually sleep/shutdown in these cases
-  if vbus_present or config.run_continuously:
+  # Don't arm watchdog when on USB power
+  # since we can't actually power down in this case
+  if vbus_present:
     return
   
   # set default alarm now in case processor hangs.  Normally ths is overwritten by sleep()
