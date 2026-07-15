@@ -75,6 +75,8 @@ class Multicore_Weather_Wind:
     self.last_loop_overhead_ms = 0
     self.remaining_loop_overhead_ms = 0
     self.gust_rolling_average_duration_s = 3
+    self.previous_loop_time_ms = 0
+    self.cached_samples = []
 
   def init_wind_poll_thread(self) -> None:
     self.wind_poll_thread = _thread.start_new_thread(self.constant_poll_wind_speed, ())
