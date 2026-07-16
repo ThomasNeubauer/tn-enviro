@@ -192,10 +192,28 @@ except Exception as exc:
     except:
         pass
     
-    # Go to sleep to avoid infinite reboot loop
+    # Check if on USB power - if so, reset immediately
+    # If on battery, sleep and wait for alarm
     try:
-        enviro.sleep()
+        from machine import Pin
+        vbus_present = Pin("WL_GPIO2", Pin.IN).value()
     except:
-        # Last resort: hard reset
+        vbus_present = False
+    
+    if vbus_present:
+        # On USB power: log, wait briefly for logs to flush, then reset
+        try:
+            log_to_file("USB POWER: Immediate reset after crash")
+        except:
+            pass
+        time.sleep(5)  # Allow time for logs to flush
         import machine
         machine.reset()
+    else:
+        # On battery power: use existing sleep mechanism
+        try:
+            enviro.sleep()
+        except:
+            # Last resort: hard reset
+            import machine
+            machine.reset()

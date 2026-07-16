@@ -42,6 +42,12 @@ upload_frequency = 5
 # Watchdog timer in whole minutes (integer), 0 is not active 
 pio_watchdog_time = 20
 
+# Software watchdog timer in whole minutes (integer), 0 is not active
+# This watchdog performs a software reset and works on USB power
+# Unlike pio_watchdog_time, this does not cut power - it calls machine.reset()
+# Recommended: 5-10 minutes for USB power operation
+software_watchdog_time = 5
+
 # web hook settings
 custom_http_url = None
 custom_http_username = None

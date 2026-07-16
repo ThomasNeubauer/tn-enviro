@@ -1,7 +1,6 @@
 import _thread
 from time import ticks_ms, ticks_diff, time
 from machine import Pin
-import _thread
 from math import pi
 import enviro
 from enviro.boards import weather
@@ -19,12 +18,22 @@ class Multicore_Weather:
     self.mww.init_wind_poll_thread()
     enviro.stop_activity_led()
 
-    # Arm watchdog if configured
+    # Arm hardware watchdog if configured (battery power only)
     if hasattr(enviro.config, 'pio_watchdog_time') and enviro.config.pio_watchdog_time != 0:
         enviro.arm_watchdog()
+    
+    # Initialize software watchdog if configured (works on USB power)
+    if hasattr(enviro.config, 'software_watchdog_time') and enviro.config.software_watchdog_time is not None and enviro.config.software_watchdog_time > 0:
+        enviro.init_software_watchdog(enviro.config.software_watchdog_time)
 
     while True:
       try:
+        # Pet the software watchdog at start of each loop iteration
+        if hasattr(enviro, 'pet_watchdog'):
+            enviro.pet_watchdog()
+        if hasattr(enviro, 'update_heartbeat'):
+            enviro.update_heartbeat()
+        
         self.poll_rain_pin()
 
         if self.mww.check_pending_wind_data_length() > 0:
@@ -35,16 +44,33 @@ class Multicore_Weather:
           enviro.upload_readings()
           enviro.activity_led(0)
           
-        # Reset watchdog timer on each iteration to prevent it from firing
+        # Reset hardware watchdog timer on each iteration to prevent it from firing
         if hasattr(enviro.config, 'pio_watchdog_time') and enviro.config.pio_watchdog_time != 0:
             enviro.arm_watchdog()
             
       except Exception as e:
-        enviro.logging.error(f"Multicore loop error: {e}")
+        # Enhanced error logging with full traceback
+        import sys, io
+        buf = io.StringIO()
+        sys.print_exception(e, buf)
+        full_error = f"Multicore loop error: {buf.getvalue()}"
+        
+        # Log to multiple destinations
+        enviro.logging.error(full_error)
+        try:
+            enviro.log_crash(e, " [multicore loop]")
+        except:
+            pass
+        
         enviro.activity_led(0)
-        # Re-arm watchdog after error to ensure system recovers
+        
+        # Re-arm hardware watchdog after error to ensure system recovers
         if hasattr(enviro.config, 'pio_watchdog_time') and enviro.config.pio_watchdog_time != 0:
             enviro.arm_watchdog()
+        
+        # Pet software watchdog after error recovery
+        if hasattr(enviro, 'pet_watchdog'):
+            enviro.pet_watchdog()
 
   def poll_rain_pin(self) -> None:
     weather.check_trigger()
@@ -131,6 +157,16 @@ class Multicore_Weather_Wind:
     sample_id = 0
 
     while (True):
+      # Pet the software watchdog every N iterations to show we're alive
+      # Pet every 30 iterations (30 * 250ms = 7.5 seconds with sample_ms=250)
+      if sample_id % 30 == 0:
+        try:
+            import enviro
+            if hasattr(enviro, 'pet_watchdog'):
+                enviro.pet_watchdog()
+        except:
+            pass
+      
       if self.remaining_loop_overhead_ms > 0:
         self.discard_overhead_compensation_poll()
       else:

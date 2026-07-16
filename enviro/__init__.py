@@ -299,12 +299,97 @@ def halt(message):
 
 # log the exception, blink the warning led, and go back to sleep
 def exception(exc):
-  import sys, io
-  buf = io.StringIO()
-  sys.print_exception(exc, buf)
-  logging.exception("! " + buf.getvalue())
+  import sys, io, time
+  
+  # Log the crash with full details
+  log_crash(exc, " [exception handler]")
+  
+  # Show warning LED
   warn_led(WARN_LED_BLINK)
-  sleep()
+  
+  # Check if on USB power
+  try:
+      from machine import Pin
+      vbus_present = Pin("WL_GPIO2", Pin.IN).value()
+  except:
+      vbus_present = False
+  
+  if vbus_present:
+      # On USB power: reset immediately after brief delay
+      time.sleep(5)  # Allow logs to flush
+      import machine
+      machine.reset()
+  else:
+      # On battery power: use existing sleep mechanism
+      sleep()
+
+
+def log_crash(exc, context=""):
+    """Log a crash with full details to crash.log.
+    
+    This function provides comprehensive crash logging that works
+    even when other logging systems have failed.
+    
+    Args:
+        exc: The exception object
+        context: Additional context string to include in the log
+    """
+    import sys, io, gc
+    
+    # Get full exception traceback
+    buf = io.StringIO()
+    sys.print_exception(exc, buf)
+    traceback = buf.getvalue()
+    
+    # Get memory info
+    try:
+        free_mem = gc.mem_free()
+        alloc_mem = gc.mem_alloc()
+        mem_info = f"[Mem: {free_mem}kB free, {alloc_mem}kB alloc]"
+    except:
+        mem_info = "[Mem: unknown]"
+    
+    # Get current time
+    try:
+        rtc = RTC()
+        dt = rtc.datetime()
+        timestamp = f"[{dt[0]}-{dt[1]:02}-{dt[2]:02} {dt[3]:02}:{dt[4]:02}:{dt[5]:02}]"
+    except:
+        timestamp = f"[unixtime: {time.time()}]"
+    
+    # Build error message
+    error_lines = [
+        f"{timestamp}{mem_info}[CRASH]{context}",
+        f"Exception type: {type(exc).__name__}",
+        f"Exception message: {str(exc)}",
+        f"Traceback:\n{traceback}"
+    ]
+    
+    error_msg = "\n".join(error_lines)
+    
+    # Write to crash.log (most reliable - direct file I/O)
+    try:
+        with open("crash.log", "a") as f:
+            f.write(error_msg + "\n\n---\n\n")
+    except:
+        pass
+    
+    # Try phew logging
+    try:
+        logging.error(f"CRASH: {error_msg}")
+    except:
+        pass
+    
+    # Try uLogger if available
+    try:
+        from lib.ulogging import uLogger
+        crash_logger = uLogger("CRASH")
+        crash_logger.error(error_msg)
+    except:
+        pass
+    
+    return error_msg
+
 
 # returns True if we've used up 90% of the internal filesystem
 def low_disk_space():
@@ -645,6 +730,107 @@ class DELAYOFF:
 # Global reference to the watchdog DELAYOFF instance for cleanup
 _watchdog_delayoff = None
 
+# Software watchdog for USB power
+_software_watchdog_timer = None
+_last_watchdog_pet = 0
+_last_heartbeat_time = 0
+
+
+def init_software_watchdog(timeout_minutes=5):
+    """Initialize software watchdog that resets board if not petted.
+    
+    This watchdog uses a Timer to periodically check if the main code
+    is still alive. It works on both USB and battery power, but is
+    primarily intended for USB power where the hardware watchdog cannot
+    cut power.
+    
+    Args:
+        timeout_minutes: Watchdog timeout in minutes. If the watchdog
+                       is not petted within this period, the board resets.
+    """
+    global _software_watchdog_timer, _last_watchdog_pet, _last_heartbeat_time
+    
+    # Clean up any existing watchdog
+    if _software_watchdog_timer is not None:
+        try:
+            _software_watchdog_timer.deinit()
+        except:
+            pass
+        _software_watchdog_timer = None
+    
+    _last_watchdog_pet = time.time()
+    _last_heartbeat_time = time.time()
+    
+    if timeout_minutes <= 0:
+        return  # Watchdog disabled
+    
+    def check_watchdog(timer):
+        """Callback function that checks if watchdog needs to fire."""
+        global _last_watchdog_pet, _last_heartbeat_time
+        current_time = time.time()
+        
+        # Check if watchdog was petted recently
+        if current_time - _last_watchdog_pet > timeout_minutes * 60:
+            error_msg = f"!!! SOFTWARE WATCHDOG FIRED at {current_time} - no pet for {timeout_minutes} minutes"
+            # Try multiple logging methods
+            try:
+                log_to_file(error_msg)
+            except:
+                pass
+            try:
+                logging.error(error_msg)
+            except:
+                pass
+            # Reset the board
+            machine.reset()
+        
+        # Check heartbeat as redundant check
+        if current_time - _last_heartbeat_time > timeout_minutes * 60 * 2:
+            error_msg = f"!!! HEARTBEAT WATCHDOG FIRED at {current_time} - no heartbeat for {timeout_minutes * 2} minutes"
+            try:
+                log_to_file(error_msg)
+            except:
+                pass
+            machine.reset()
+    
+    _software_watchdog_timer = Timer(-1)
+    _software_watchdog_timer.init(
+        period=60000,  # Check every 60 seconds
+        mode=Timer.PERIODIC,
+        callback=check_watchdog
+    )
+
+
+def pet_watchdog():
+    """Call this periodically to reset the software watchdog timer.
+    
+    This should be called from the main loop and any long-running threads
+    to indicate that the code is still alive and functioning.
+    """
+    global _last_watchdog_pet
+    _last_watchdog_pet = time.time()
+
+
+def update_heartbeat():
+    """Update the heartbeat timestamp.
+    
+    This is a redundant check - call this from the main loop.
+    """
+    global _last_heartbeat_time
+    _last_heartbeat_time = time.time()
+
+
+def stop_software_watchdog():
+    """Stop and clean up the software watchdog timer."""
+    global _software_watchdog_timer
+    if _software_watchdog_timer is not None:
+        try:
+            _software_watchdog_timer.deinit()
+        except:
+            pass
+        _software_watchdog_timer = None
+
+
 def arm_watchdog():
   global _watchdog_delayoff
   
@@ -725,6 +911,10 @@ def startup():
   # set watchdog if configured in config file
   if config.pio_watchdog_time is not 0:
     arm_watchdog()
+  
+  # Initialize software watchdog (works on USB power)
+  if hasattr(config, 'software_watchdog_time') and config.software_watchdog_time is not None and config.software_watchdog_time > 0:
+    init_software_watchdog(config.software_watchdog_time)
 
   # also immediately turn on the LED to indicate that we're doing something
   logging.debug("  - turn on activity led")
