@@ -48,6 +48,12 @@ pio_watchdog_time = 20
 # Recommended: 5-10 minutes for USB power operation
 software_watchdog_time = 5
 
+# Scheduled restart in minutes (integer), 0 = disabled
+# Proactively restarts the board to prevent memory leaks/freezes
+# Useful for USB power operation where silent freezes can occur
+# Recommended: 360-600 (6-10 hours) for continuous operation, use smaller values for testing
+scheduled_restart_minutes = 0
+
 # web hook settings
 custom_http_url = None
 custom_http_username = None

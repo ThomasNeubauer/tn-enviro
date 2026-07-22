@@ -831,6 +831,70 @@ def stop_software_watchdog():
         _software_watchdog_timer = None
 
 
+# Scheduled restart tracking
+_scheduled_restart_start_time = 0
+_scheduled_restart_interval = 0
+_restart_warned = False
+
+
+def init_scheduled_restart(interval_minutes):
+    """Initialize scheduled restart tracking.
+    
+    Args:
+        interval_minutes: Restart interval in minutes. 0 disables scheduled restart.
+    """
+    global _scheduled_restart_start_time, _scheduled_restart_interval, _restart_warned
+    
+    if interval_minutes <= 0:
+        _scheduled_restart_interval = 0
+        return
+    
+    _scheduled_restart_start_time = time.time()
+    _scheduled_restart_interval = interval_minutes * 60
+    _restart_warned = False
+    msg = f"SCHEDULED RESTART: Initialized with {interval_minutes} minute interval"
+    try:
+        log_to_file(msg)
+    except:
+        pass
+    logging.info(f"> {msg}")
+
+
+def check_scheduled_restart():
+    """Check if it's time for a scheduled restart."""
+    global _scheduled_restart_start_time, _scheduled_restart_interval, _restart_warned
+    
+    if _scheduled_restart_interval <= 0:
+        return False
+    
+    current_time = time.time()
+    elapsed = current_time - _scheduled_restart_start_time
+    remaining = _scheduled_restart_interval - elapsed
+    
+    # Simple: warn once at 2min mark
+    if remaining <= 120 and not _restart_warned:
+        logging.info("> SCHEDULED RESTART: 2min left")
+        _restart_warned = True
+    
+    if elapsed >= _scheduled_restart_interval:
+        logging.info("> SCHEDULED RESTART: RESTARTING NOW")
+        return True
+    
+    return False
+
+
+def do_scheduled_restart():
+    """Perform a scheduled restart with logging and delay for log flush."""
+    msg = "=== SCHEDULED RESTART TRIGGERED ==="
+    try:
+        log_to_file(msg)
+    except:
+        pass
+    logging.info(f"> {msg}")
+    time.sleep(2)  # Allow logs to flush
+    machine.reset()
+
+
 def arm_watchdog():
   global _watchdog_delayoff
   
@@ -915,6 +979,10 @@ def startup():
   # Initialize software watchdog (works on USB power)
   if hasattr(config, 'software_watchdog_time') and config.software_watchdog_time is not None and config.software_watchdog_time > 0:
     init_software_watchdog(config.software_watchdog_time)
+
+  # Initialize scheduled restart (works on both USB and battery power)
+  if hasattr(config, 'scheduled_restart_minutes') and config.scheduled_restart_minutes is not None and config.scheduled_restart_minutes > 0:
+    init_scheduled_restart(config.scheduled_restart_minutes)
 
   # also immediately turn on the LED to indicate that we're doing something
   logging.debug("  - turn on activity led")

@@ -10,6 +10,7 @@ DEFAULT_SECONDARY_DESTINATION = None
 DEFAULT_WIND_DIRECTION_OFFSET = 0
 DEFAULT_PIO_WATCHDOG_TIME = 0
 DEFAULT_SOFTWARE_WATCHDOG_TIME = 5
+DEFAULT_SCHEDULED_RESTART_MINUTES = 0  # 0 = disabled
 
 def add_missing_config_settings():
   try:
@@ -108,6 +109,12 @@ def add_missing_config_settings():
   except AttributeError:
     warn_missing_config_setting("software_watchdog_time")
     config.software_watchdog_time = DEFAULT_SOFTWARE_WATCHDOG_TIME
+
+  try:
+    config.scheduled_restart_minutes
+  except AttributeError:
+    warn_missing_config_setting("scheduled_restart_minutes")
+    config.scheduled_restart_minutes = DEFAULT_SCHEDULED_RESTART_MINUTES
   
 
 def warn_missing_config_setting(setting):

@@ -25,6 +25,10 @@ class Multicore_Weather:
     # Initialize software watchdog if configured (works on USB power)
     if hasattr(enviro.config, 'software_watchdog_time') and enviro.config.software_watchdog_time is not None and enviro.config.software_watchdog_time > 0:
         enviro.init_software_watchdog(enviro.config.software_watchdog_time)
+    
+    # Initialize scheduled restart if configured (works on both USB and battery power)
+    if hasattr(enviro.config, 'scheduled_restart_minutes') and enviro.config.scheduled_restart_minutes is not None and enviro.config.scheduled_restart_minutes > 0:
+        enviro.init_scheduled_restart(enviro.config.scheduled_restart_minutes)
 
     while True:
       try:
@@ -33,6 +37,10 @@ class Multicore_Weather:
             enviro.pet_watchdog()
         if hasattr(enviro, 'update_heartbeat'):
             enviro.update_heartbeat()
+        
+        # Check for scheduled restart
+        if hasattr(enviro, 'check_scheduled_restart') and enviro.check_scheduled_restart():
+            enviro.do_scheduled_restart()
         
         self.poll_rain_pin()
 
